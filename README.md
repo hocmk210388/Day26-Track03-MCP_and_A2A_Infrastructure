@@ -69,6 +69,38 @@ User question
 | Registry | FastAPI + in-memory store |
 | Package manager | [uv](https://docs.astral.sh/uv/) |
 
+## 📚 Codelab for Students
+
+**Thời gian:** 2 giờ | **Ngôn ngữ:** Tiếng Việt
+
+Codelab hướng dẫn từng bước xây dựng multi-agent system, từ cơ bản đến nâng cao:
+
+- **[CODELAB.md](CODELAB.md)** - Hướng dẫn chi tiết cho sinh viên
+- **[INSTRUCTOR_GUIDE.md](INSTRUCTOR_GUIDE.md)** - Hướng dẫn cho giảng viên
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Tài liệu tham khảo nhanh
+- **[exercises/](exercises/)** - Bài tập thực hành với skeleton code
+- **[exercises/SOLUTIONS.md](exercises/SOLUTIONS.md)** - Đáp án chi tiết
+
+### Lộ Trình Học
+
+```
+Stage 1: Direct LLM (20 phút)
+    ↓
+Stage 2: RAG + Tools (30 phút)
+    ↓
+Stage 3: ReAct Agent (25 phút)
+    ↓
+Stage 4: Multi-Agent (30 phút)
+    ↓
+Stage 5: Distributed A2A (30 phút)
+    ↓
+Tổng kết & Q&A (15 phút)
+```
+
+**Bắt đầu:** Đọc [CODELAB.md](CODELAB.md)
+
+---
+
 ## Getting Started
 
 ### Prerequisites
