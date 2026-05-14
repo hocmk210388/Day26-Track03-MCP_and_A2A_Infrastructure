@@ -100,7 +100,7 @@ def search_compliance_law(query: str) -> str:
 
 from typing import Annotated, TypedDict
 
-from langgraph.constants import Send
+from langgraph.types import Send
 from langgraph.graph import END, StateGraph
 
 
@@ -116,6 +116,7 @@ class LegalState(TypedDict):
     needs_compliance: bool
     tax_result: Annotated[str, _last_wins]
     compliance_result: Annotated[str, _last_wins]
+    privacy_analysis: Annotated[str, _last_wins]  # Bài Tập 4.1
     final_answer: str
 
 
@@ -179,12 +180,27 @@ async def check_routing(state: LegalState) -> dict:
 
 
 def route_to_specialists(state: LegalState) -> list[Send]:
-    """Routing function: dispatch parallel Send objects to specialist nodes."""
+    """Bài Tập 4.2: Conditional routing — chỉ gọi agent khi cần thiết."""
+    question_lower = state["question"].lower()
     sends: list[Send] = []
-    if state.get("needs_tax"):
+
+    if any(kw in question_lower for kw in ["tax", "irs", "thuế", "offshore", "fbar"]):
         sends.append(Send("call_tax_specialist", state))
-    if state.get("needs_compliance"):
+
+    if any(kw in question_lower for kw in ["compliance", "sec", "regulation", "sox", "fcpa", "aml"]):
         sends.append(Send("call_compliance_specialist", state))
+
+    # Bài Tập 4.2: Chỉ gọi privacy_agent khi có từ khóa liên quan
+    if any(kw in question_lower for kw in ["data", "privacy", "gdpr", "dữ liệu", "ccpa"]):
+        sends.append(Send("call_privacy_agent", state))
+
+    # Nếu không có specialist nào, fallback: needs_tax / needs_compliance từ LLM routing
+    if not sends:
+        if state.get("needs_tax"):
+            sends.append(Send("call_tax_specialist", state))
+        if state.get("needs_compliance"):
+            sends.append(Send("call_compliance_specialist", state))
+
     if not sends:
         sends.append(Send("aggregate", state))
     return sends
@@ -235,6 +251,32 @@ async def call_compliance_specialist(state: LegalState) -> dict:
     return {"compliance_result": final_msg}
 
 
+# Bài Tập 4.1: Privacy agent chuyên về GDPR và luật bảo vệ dữ liệu cá nhân
+async def call_privacy_agent(state: LegalState) -> dict:
+    """Privacy specialist sub-agent for GDPR / data protection law."""
+    print("\n  [Node: call_privacy_agent] Privacy specialist agent starting...")
+
+    privacy_prompt = (
+        "Bạn là chuyên gia về GDPR, CCPA, và luật bảo vệ dữ liệu cá nhân. "
+        "Phân tích các vấn đề về privacy và data protection liên quan đến câu hỏi. "
+        "Nêu rõ mức phạt có thể (áp dụng GDPR 4% doanh thu toàn cầu hoặc EUR 20M, "
+        "CCPA $7,500 mỗi vi phạm cố ý). Keep your response under 200 words."
+    )
+
+    llm = get_llm()
+    context = (
+        f"Legal analysis: {state.get('law_analysis', 'N/A')}\n\n"
+        f"Original question: {state['question']}"
+    )
+    messages = [
+        SystemMessage(content=privacy_prompt),
+        HumanMessage(content=context),
+    ]
+    result = await llm.ainvoke(messages)
+    print(f"  [Node: call_privacy_agent] Done ({len(result.content)} chars)")
+    return {"privacy_analysis": result.content}
+
+
 async def aggregate(state: LegalState) -> dict:
     """Combine all specialist analyses into a final comprehensive answer."""
     print("\n  [Node: aggregate] Combining all specialist analyses...")
@@ -247,6 +289,8 @@ async def aggregate(state: LegalState) -> dict:
         sections.append(f"## Tax Analysis\n{state['tax_result']}")
     if state.get("compliance_result"):
         sections.append(f"## Regulatory Compliance Analysis\n{state['compliance_result']}")
+    if state.get("privacy_analysis"):  # Bài Tập 4.1
+        sections.append(f"## Privacy & Data Protection Analysis\n{state['privacy_analysis']}")
 
     combined = "\n\n---\n\n".join(sections)
 
@@ -278,6 +322,7 @@ def create_graph():
     graph.add_node("check_routing", check_routing)
     graph.add_node("call_tax_specialist", call_tax_specialist)
     graph.add_node("call_compliance_specialist", call_compliance_specialist)
+    graph.add_node("call_privacy_agent", call_privacy_agent)  # Bài Tập 4.1
     graph.add_node("aggregate", aggregate)
 
     graph.set_entry_point("analyze_law")
@@ -285,16 +330,20 @@ def create_graph():
     graph.add_conditional_edges(
         "check_routing",
         route_to_specialists,
-        ["call_tax_specialist", "call_compliance_specialist", "aggregate"],
+        ["call_tax_specialist", "call_compliance_specialist", "call_privacy_agent", "aggregate"],
     )
     graph.add_edge("call_tax_specialist", "aggregate")
     graph.add_edge("call_compliance_specialist", "aggregate")
+    graph.add_edge("call_privacy_agent", "aggregate")  # Bài Tập 4.1
     graph.add_edge("aggregate", END)
 
     return graph.compile()
 
 
-QUESTION = "If a company breaks a contract and avoids taxes, what are the legal and regulatory consequences?"
+QUESTION = (
+    "If a company breaks a contract, avoids taxes, and processes user data without GDPR "
+    "consent, what are the legal and regulatory consequences?"
+)
 
 
 async def main():
@@ -305,11 +354,16 @@ async def main():
     print("[How it works]")
     print("  1. Lead attorney agent analyses the question")
     print("  2. Router decides which specialist agents are needed")
-    print("  3. Tax + Compliance specialists run IN PARALLEL (LangGraph Send API)")
+    print(
+        "  3. Tax / Compliance / Privacy specialists run IN PARALLEL when routed "
+        "(LangGraph Send API)"
+    )
     print("  4. Aggregator combines all analyses into a final answer")
     print()
     print("[Graph topology]")
-    print("  analyze_law -> check_routing -> [call_tax + call_compliance] -> aggregate -> END")
+    print(
+        "  analyze_law -> check_routing -> [tax | compliance | privacy] -> aggregate -> END"
+    )
     print()
     print(f"Question: {QUESTION}")
     print("-" * 70)
@@ -323,6 +377,7 @@ async def main():
         "needs_compliance": False,
         "tax_result": "",
         "compliance_result": "",
+        "privacy_analysis": "",  # Bài Tập 4.1
         "final_answer": "",
     })
 
@@ -335,7 +390,7 @@ async def main():
     print("-" * 70)
     print("[Improvements over Stage 3]")
     print("  + Specialisation: each agent has domain-specific expertise")
-    print("  + Parallel execution: tax + compliance agents run concurrently")
+    print("  + Parallel execution: specialist agents run concurrently when routed")
     print("  + Better quality: specialist prompts produce deeper analysis")
     print("  + Structured flow: explicit graph topology with routing logic")
     print()

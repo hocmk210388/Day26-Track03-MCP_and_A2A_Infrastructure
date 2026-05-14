@@ -68,6 +68,12 @@ Mở file `stages/stage_1_direct_llm/main.py` và trả lời:
 2. Message được gửi đến LLM có cấu trúc gì?
 3. Tại sao cần có `SystemMessage` và `HumanMessage`?
 
+**Đáp án**
+
+1. Trong `main.py` gọi `llm = get_llm()`. Hàm `get_llm()` nằm ở `common/llm.py`: trả về `ChatOpenAI` trỏ OpenRouter (`openai_api_base`), model từ `OPENROUTER_MODEL`, API key từ `OPENROUTER_API_KEY`, có `temperature` và `max_tokens` (giới hạn credit).
+2. Một **list** các message LangChain theo thứ tự: `SystemMessage(content=...)` rồi `HumanMessage(content=QUESTION)`. Truyền vào `await llm.ainvoke(messages)`.
+3. `SystemMessage` đặt **vai trò và quy tắc** (ví dụ “bạn là chuyên gia pháp lý”, giới hạn độ dài). `HumanMessage` là **nội dung người dùng** (câu hỏi). Tách hai loại giúp model phân biệt chỉ dẫn hành vi và nhiệm vụ cần trả lời.
+
 **Bài Tập 1.1:** Thay đổi câu hỏi
 
 Sửa biến `QUESTION` thành câu hỏi pháp lý khác (tiếng Việt hoặc tiếng Anh) và chạy lại.
@@ -107,6 +113,12 @@ Mở `stages/stage_2_rag_tools/main.py` và tìm:
 1. Hàm `@tool` decorator được dùng ở đâu?
 2. `LEGAL_KNOWLEDGE` được cấu trúc như thế nào?
 3. LLM được bind với tools ra sao? (Tìm `.bind_tools()`)
+
+**Đáp án**
+
+1. Trên các hàm `search_legal_database`, `calculate_damages`, `check_statute_of_limitations` (import `tool` từ `langchain_core.tools`).
+2. `LEGAL_KNOWLEDGE` là **list các dict**, mỗi phần tử có `id`, `keywords` (list từ khóa), `text` (đoạn văn bản kiến thức). Tool search so khớp từ khóa trong query với `keywords`.
+3. `llm_with_tools = llm.bind_tools(TOOLS)` — gắn danh sách tool vào model để API completion có thể trả về `tool_calls`.
 
 **Bài Tập 2.1:** Thêm knowledge base entry
 
@@ -186,6 +198,12 @@ Mở `stages/stage_3_single_agent/main.py`:
 2. So sánh với Stage 2: không còn manual tool loop
 3. Xem `agent_executor.invoke()` — chỉ cần gọi một lần
 
+**Đáp án**
+
+1. `from langgraph.prebuilt import create_react_agent`, gọi với `model=llm`, `tools=TOOLS`, `prompt=SYSTEM_PROMPT` (trong repo có thêm `debug=True` để log luồng nội bộ).
+2. Stage 2 tự viết vòng lặp: gọi LLM → nếu có `tool_calls` thì execute tool → thêm `ToolMessage` → gọi LLM lại. Stage 3 LangGraph gói chu trình ReAct; không cần tự cập nhật `messages` theo từng bước như Stage 2.
+3. Trong file demo hiện tại **không** có biến tên `agent_executor`; thay bằng `graph = create_react_agent(...)` rồi **`graph.astream(...)`** để in từng bước. Về ý niệm giống CODELAB: **một lần đưa input vào graph** là đủ (có thể dùng `graph.ainvoke(inputs)` nếu chỉ cần kết quả cuối).
+
 **Bài Tập 3.1:** Thêm tool tra cứu án lệ
 
 ```python
@@ -211,7 +229,7 @@ Thêm vào tools list và test với câu hỏi về breach of contract.
 
 **Bài Tập 3.2:** Debug agent reasoning
 
-Thêm `verbose=True` vào `create_react_agent()` để xem chi tiết quá trình suy nghĩ của agent.
+Trong tài liệu gốc gợi ý `verbose=True`. Trên **LangGraph 1.x**, `create_react_agent` không có `verbose`; hãy dùng **`debug=True`** để xem log chi tiết luồng agent (đã áp dụng trong `stages/stage_3_single_agent/main.py`).
 
 ---
 
@@ -249,6 +267,13 @@ Mở `stages/stage_4_milti_agent/main.py`:
 2. Tìm các agent functions: `law_agent`, `tax_agent`, `compliance_agent`
 3. Tìm `Send()` API — dispatch parallel tasks
 4. Xem `graph.add_node()` và `graph.add_edge()`
+
+**Đáp án**
+
+1. Trong code là **`LegalState(TypedDict)`** (cùng vai trò “shared state” như `State` trong đề): gồm `question`, `law_analysis`, `needs_tax`, `needs_compliance`, `tax_result`, `compliance_result`, `privacy_analysis`, `final_answer`; một số field dùng `Annotated[..., _last_wins]` để merge khi chạy song song.
+2. Tên hàm/node trong repo: **`analyze_law`** (luật tổng), **`call_tax_specialist`**, **`call_compliance_specialist`**, **`call_privacy_agent`** — tương đương law / tax / compliance / privacy trong đề bài.
+3. **`from langgraph.types import Send`**. Trong `route_to_specialists`, trả về `list[Send]` — nhiều `Send("tên_node", state)` → các nhánh có thể chạy **song song**, sau đó hội tụ `aggregate`.
+4. `StateGraph(LegalState)` rồi `graph.add_node(...)`, `graph.add_edge(...)` cho luồng tuyến tính; `graph.add_conditional_edges("check_routing", route_to_specialists, [...])` để rẽ nhánh theo từ khóa / fallback.
 
 **Bước 3:** Vẽ graph
 
@@ -335,6 +360,8 @@ Customer Agent (10100) → Law Agent (10101)
 ./start_all.sh
 ```
 
+Trên **Windows (PowerShell)**, dùng script tương đương trong repo: `.\start_all.ps1` (hoặc chạy `bash ./start_all.sh` nếu có Git Bash).
+
 Chờ ~10 giây để tất cả services khởi động.
 
 **Bước 2:** Test hệ thống
@@ -343,7 +370,9 @@ Chờ ~10 giây để tất cả services khởi động.
 uv run python test_client.py
 ```
 
-**Bước 3:** Quan sát logs
+Hoặc: `python test_client.py` (khi đã kích hoạt `.venv` / đúng interpreter).
+
+**Lưu ý:** Phải gọi bằng `python ...`; gõ riêng `test_client.py` trong PowerShell thường **không** chạy script.
 
 Mở 5 terminal tabs và xem logs của từng service:
 - Registry: port 10000
@@ -366,6 +395,11 @@ Trong logs, tìm `trace_id` và theo dõi request đi qua các agents. Vẽ sequ
 
 Sửa `tax_agent/graph.py`, thay đổi system prompt để agent trả lời ngắn gọn hơn. Restart tax agent và test lại.
 
+**Gợi ý trả lời / quan sát (5.1–5.2):**
+
+- **5.1 Trace:** Trong log các service, tìm cùng một **`trace_id`** (hoặc id tương đương repo gắn vào request) để thấy luồng Customer → Law → Tax/Compliance. Vẽ sequence diagram: Client → Customer Agent → Law Agent → các specialist → tổng hợp trả lời.
+- **5.2 Dynamic discovery:** Khi tắt Tax Agent, registry không còn endpoint hợp lệ cho task thuế — `test_client` có thể báo lỗi kết nối / task failed; quan sát message và phần hệ thống vẫn trả lời được những gì (fallback tùy triển khai).
+
 ---
 
 ## Phần 6: Tổng Kết & Mở Rộng (10 phút)
@@ -386,6 +420,13 @@ Sửa `tax_agent/graph.py`, thay đổi system prompt để agent trả lời ng
 2. Ưu điểm của A2A protocol so với gRPC hoặc REST thông thường?
 3. Làm thế nào để prevent infinite delegation loops trong A2A?
 4. Tại sao cần Registry service? Có thể hardcode URLs không?
+
+**Đáp án tham khảo:**
+
+1. **Single agent** khi bài toán thuộc **một domain**, luồng **tuần tự** đủ, muốn **đơn giản / ít LLM call song song / latency thấp**. **Multi-agent** khi **tách domain rõ**, cần **song song**, **prompt hoặc chính sách khác nhau** từng chuyên gia, hoặc triển khai/tách team theo service.
+2. A2A chuẩn hóa **agent card**, **task / delegation**, **discovery** (registry) cho hệ nhiều agent. gRPC/REST “thuần” linh hoạt nhưng phải **tự thiết kế** toàn bộ contract và semantics ủy quyền.
+3. Giới hạn **độ sâu / số hop** delegation, **timeout**, danh sách **agent được phép gọi**, phát hiện **chu trình**, dùng **trace_id** + idempotency, và policy **dừng khi đủ thông tin** ở orchestrator.
+4. Registry hỗ trợ **dynamic discovery** khi agent đổi host/port, scale, phiên bản. **Hardcode URL** vẫn được cho **dev / topology nhỏ cố định**, nhưng kém linh hoạt khi môi trường thay đổi.
 
 ### Bài Tập Nâng Cao (Tự Học)
 

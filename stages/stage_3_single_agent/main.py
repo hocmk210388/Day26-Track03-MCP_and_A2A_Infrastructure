@@ -172,18 +172,41 @@ def check_compliance_requirements(industry: str, company_size: str) -> str:
     )
 
 
-TOOLS = [search_legal_database, calculate_penalty, check_compliance_requirements]
+# Bài Tập 3.1: Tool tìm kiếm án lệ
+@tool
+def search_case_law(keywords: str) -> str:
+    """Tìm kiếm án lệ theo từ khóa.
 
+    Args:
+        keywords: Từ khóa tìm kiếm
+    """
+    cases = {
+        "breach": "Hadley v. Baxendale (1854) - Consequential damages",
+        "negligence": "Donoghue v. Stevenson (1932) - Duty of care",
+        "contract": "Carlill v. Carbolic Smoke Ball Co (1893) - Unilateral contract",
+    }
+    for key, case in cases.items():
+        if key in keywords.lower():
+            return case
+    return "Không tìm thấy án lệ phù hợp"
+
+
+TOOLS = [search_legal_database, calculate_penalty, check_compliance_requirements, search_case_law]
+
+# Gồm breach of contract để agent gọi search_case_law (Bài Tập 3.1)
 QUESTION = (
-    "A tech startup with $5M revenue was caught sharing user data without consent "
-    "and failed to pay taxes on overseas revenue. What are all the legal consequences?"
+    "For breach of contract under U.S. law: what remedies apply and which landmark cases "
+    "address consequential damages? Separately, a tech startup with $5M revenue shared user "
+    "data without consent and failed to pay taxes on overseas revenue — what are the legal "
+    "and compliance consequences?"
 )
 
 SYSTEM_PROMPT = (
     "You are a legal analyst agent. You have access to tools for searching legal databases, "
-    "calculating penalties, and checking compliance requirements. Use these tools to build "
-    "a comprehensive analysis. Search for each legal area separately — data privacy, tax, "
-    "and compliance. Keep your final answer under 500 words."
+    "case law (search_case_law), calculating penalties, and checking compliance requirements. "
+    "Use these tools to build a comprehensive analysis. For contract questions, use "
+    "search_case_law when landmark cases are relevant. Search each legal area separately — "
+    "contract, data privacy, tax, and compliance. Keep your final answer under 500 words."
 )
 
 
@@ -205,7 +228,10 @@ async def main():
     print("-" * 70)
 
     llm = get_llm()
-    graph = create_react_agent(model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT)
+    # Bài Tập 3.2: LangGraph dùng debug=True để log chi tiết luồng agent (thay cho verbose)
+    graph = create_react_agent(
+        model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT, debug=True
+    )
 
     inputs = {"messages": [{"role": "user", "content": QUESTION}]}
 
